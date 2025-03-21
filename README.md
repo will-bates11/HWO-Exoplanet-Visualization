@@ -16,7 +16,7 @@ This project implements an interactive 3D visualization tool to map known exopla
 
 #### 1. Clone the Repository
 ```bash
-git clone https://github.com/your-username/HWO-Exoplanet-Visualization.git
+git clone https://github.com/will-bates11/HWO-Exoplanet-Visualization.git
 cd HWO-Exoplanet-Visualization
 ```
 
