@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HWO Exoplanet Visualization</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <h1>Exoplanets Observable by HWO</h1>
+
+    {% if error %}
+    <div class="error-message">
+        {{ error }}
+    </div>
+    {% endif %}
+
+    <div class="controls">
+        <label for="telescope_diameter">Telescope Diameter (meters):</label>
+        <input type="range" id="telescope_diameter" name="telescope_diameter" 
+               min="1" max="10" step="0.5" value="2">
+        <span id="diameter_value">2</span> m
+    </div>
+
+    <div class="stats" id="stats">
+        <div class="stat-card">
+            <h3>Total Planets</h3>
+            <p id="total_planets">Loading...</p>
+        </div>
+        <div class="stat-card">
+            <h3>Average Habitability</h3>
+            <p id="avg_habitability">Loading...</p>
+        </div>
+        <div class="stat-card">
+            <h3>Number of Clusters</h3>
+            <p id="num_clusters">Loading...</p>
+        </div>
+    </div>
+
+    <div id="visualization">
+        {% if visualization %}
+            {{ visualization|safe }}
+        {% else %}
+            <p>Loading visualization...</p>
+        {% endif %}
+    </div>
+
+    <script>
+        document.getElementById("telescope_diameter").oninput = function() {
+            document.getElementById("diameter_value").innerHTML = this.value;
+            updateVisualization(this.value);
+        };
+
+        function updateVisualization(diameter) {
+            fetch(`/filter?telescope_diameter=${diameter}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        showError(data.error);
+                    } else {
+                        Plotly.react('visualization', data.visualization);
+                        updateStats(data.stats);
+                    }
+                })
+                .catch(error => {
+                    showError('Failed to update visualization. Please try again.');
+                    console.error('Error:', error);
+                });
+        }
+
+        function updateStats(stats) {
+            document.getElementById('total_planets').textContent = stats.total_planets;
+            document.getElementById('avg_habitability').textContent = 
+                stats.avg_habitability.toFixed(2);
+            document.getElementById('num_clusters').textContent = stats.num_clusters;
+        }
+
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.textContent = message;
+            
+            const existingError = document.querySelector('.error-message');
+            if (existingError) {
+                existingError.remove();
+            }
+            
+            document.querySelector('.controls').after(errorDiv);
+        }
+
+        // Initial load of statistics
+        updateVisualization(2);
+    </script>
+</body>
+</html>
