@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HWO Exoplanet Visualization</title>
     <link rel="stylesheet" href="/static/style.css">
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.1.min.js"></script>
 </head>
 <body>
     <h1>Exoplanets Observable by HWO</h1>
@@ -59,7 +59,10 @@
                     if (data.error) {
                         showError(data.error);
                     } else {
-                        Plotly.react('visualization', data.visualization);
+                        // Update visualization with the data and layout
+                        const plotData = data.visualization.data || [];
+                        const layout = data.visualization.layout || {};
+                        Plotly.newPlot('visualization', plotData, layout);
                         updateStats(data.stats);
                     }
                 })

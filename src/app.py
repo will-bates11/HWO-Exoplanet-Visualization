@@ -5,6 +5,9 @@ from clustering import cluster_exoplanets
 import logging
 from functools import lru_cache
 import traceback
+import os
+import json
+import re
 
 # Set up logging
 logging.basicConfig(
@@ -13,7 +16,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__)
+# Update template directory path
+template_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'templates'))
+static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'static'))
+app = Flask(__name__, 
+           template_folder=template_dir,
+           static_folder=static_dir)
 
 # Cache the exoplanet data for 1 hour
 @lru_cache(maxsize=1)
@@ -61,8 +69,15 @@ def filter_data():
         # Perform clustering on filtered data
         filtered_data = cluster_exoplanets(filtered_data)
         
-        # Create visualization
-        visualization_data = create_3d_visualization(filtered_data)
+        # Create visualization - parse the HTML to get the JSON data
+        visualization_html = create_3d_visualization(filtered_data)
+        
+        # Extract the JSON data from the Plotly HTML
+        data_match = re.search(r'Plotly\.newPlot\((.*?)\)(?=;|$)', visualization_html)
+        if data_match:
+            plot_data = json.loads(f'[{data_match.group(1)}]')[0]
+        else:
+            plot_data = {}
         
         # Add summary statistics
         stats = {
@@ -72,7 +87,7 @@ def filter_data():
         }
         
         return jsonify({
-            'visualization': visualization_data,
+            'visualization': plot_data,
             'stats': stats
         })
         

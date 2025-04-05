@@ -13,11 +13,15 @@ logger = logging.getLogger(__name__)
 
 # Updated NASA Exoplanet Archive API
 NASA_EXOPLANET_API = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync"
-CACHE_FILE = "exoplanet_cache.json"
+
+CACHE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cache", "exoplanet_cache.json")
 CACHE_DURATION = timedelta(days=1)  # Cache data for 1 day
 
 def load_cache():
     """Load cached exoplanet data if it exists and is not expired."""
+    # Create cache directory if it doesn't exist
+    os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
+    
     if not os.path.exists(CACHE_FILE):
         return None
     
@@ -65,7 +69,7 @@ def fetch_exoplanet_data():
     
     try:
         query = """
-        select pl_name, sy_dist as st_dist, pl_rade, st_teff, pl_orbper, pl_bmasse as pl_bmassj, 
+        select pl_name, sy_dist as st_dist, pl_rade, st_teff, pl_orbper, pl_bmassj, 
                st_mass, pl_eqt, pl_insol
         from ps
         where sy_dist < 50 
