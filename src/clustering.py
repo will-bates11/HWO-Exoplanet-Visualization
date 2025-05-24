@@ -2,11 +2,13 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score
 import numpy as np
+import pandas as pd
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-def determine_optimal_clusters(data, max_clusters=10):
+def determine_optimal_clusters(data: np.ndarray, max_clusters: int = 10) -> int:
     """
     Determine the optimal number of clusters using the silhouette score.
     
@@ -22,20 +24,41 @@ def determine_optimal_clusters(data, max_clusters=10):
     int
         Optimal number of clusters
     """
-    if len(data) < max_clusters:
-        return min(len(data), 3)
+    n_samples = len(data)
+    
+    # Need at least 2 samples per cluster
+    max_feasible_clusters = min(max_clusters, n_samples // 2)
+    
+    if max_feasible_clusters < 2:
+        return 1
+    
+    if n_samples < 4:  # Need at least 4 samples for meaningful clustering
+        return min(2, max_feasible_clusters)
         
     silhouette_scores = []
     
-    for n_clusters in range(2, max_clusters + 1):
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-        cluster_labels = kmeans.fit_predict(data)
-        silhouette_avg = silhouette_score(data, cluster_labels)
-        silhouette_scores.append(silhouette_avg)
-    
-    return np.argmax(silhouette_scores) + 2
+    try:
+        for n_clusters in range(2, max_feasible_clusters + 1):
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            cluster_labels = kmeans.fit_predict(data)
+            
+            # Check if all clusters have at least one point
+            if len(np.unique(cluster_labels)) == n_clusters:
+                silhouette_avg = silhouette_score(data, cluster_labels)
+                silhouette_scores.append(silhouette_avg)
+            else:
+                silhouette_scores.append(-1)  # Invalid clustering
+        
+        if not silhouette_scores or max(silhouette_scores) < 0:
+            return 2  # Default fallback
+            
+        return np.argmax(silhouette_scores) + 2
+        
+    except Exception as e:
+        logger.warning(f"Error in optimal cluster determination: {e}")
+        return 3  # Safe default
 
-def cluster_exoplanets(exoplanet_data, num_clusters=None):
+def cluster_exoplanets(exoplanet_data: pd.DataFrame, num_clusters: Optional[int] = None) -> pd.DataFrame:
     """
     Cluster exoplanets based on their physical characteristics.
     
