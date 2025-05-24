@@ -53,21 +53,38 @@
         };
 
         function updateVisualization(diameter) {
+            // Show loading state
+            showLoading();
+            clearError();
+            
             fetch(`/filter?telescope_diameter=${diameter}`)
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    return response.json();
+                })
                 .then(data => {
+                    hideLoading();
                     if (data.error) {
                         showError(data.error);
                     } else {
                         // Update visualization with the data and layout
                         const plotData = data.visualization.data || [];
                         const layout = data.visualization.layout || {};
-                        Plotly.newPlot('visualization', plotData, layout);
+                        
+                        // Ensure visualization div exists
+                        const vizDiv = document.getElementById('visualization');
+                        if (vizDiv) {
+                            Plotly.newPlot('visualization', plotData, layout, {responsive: true});
+                        }
+                        
                         updateStats(data.stats);
                     }
                 })
                 .catch(error => {
-                    showError('Failed to update visualization. Please try again.');
+                    hideLoading();
+                    showError('Failed to update visualization. Please check your connection and try again.');
                     console.error('Error:', error);
                 });
         }
@@ -80,16 +97,41 @@
         }
 
         function showError(message) {
+            clearError();
             const errorDiv = document.createElement('div');
             errorDiv.className = 'error-message';
             errorDiv.textContent = message;
+            errorDiv.id = 'dynamic-error';
             
-            const existingError = document.querySelector('.error-message');
+            document.querySelector('.controls').after(errorDiv);
+            
+            // Auto-hide error after 5 seconds
+            setTimeout(clearError, 5000);
+        }
+        
+        function clearError() {
+            const existingError = document.getElementById('dynamic-error');
             if (existingError) {
                 existingError.remove();
             }
+        }
+        
+        function showLoading() {
+            const statsCards = document.querySelectorAll('.stat-card p');
+            statsCards.forEach(card => {
+                card.textContent = 'Loading...';
+                card.classList.add('loading');
+            });
             
-            document.querySelector('.controls').after(errorDiv);
+            const vizDiv = document.getElementById('visualization');
+            if (vizDiv) {
+                vizDiv.innerHTML = '<div class="loading-spinner">Loading visualization...</div>';
+            }
+        }
+        
+        function hideLoading() {
+            const loadingElements = document.querySelectorAll('.loading');
+            loadingElements.forEach(el => el.classList.remove('loading'));
         }
 
         // Initial load of statistics

@@ -8,6 +8,7 @@ import traceback
 import os
 import json
 import re
+from typing import Dict, Any, Tuple
 
 # Set up logging
 logging.basicConfig(
@@ -16,12 +17,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Configuration
+class Config:
+    """Application configuration."""
+    DEBUG = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+    HOST = os.environ.get('FLASK_HOST', '0.0.0.0')
+    PORT = int(os.environ.get('FLASK_PORT', 12000))
+    TELESCOPE_DIAMETER_MIN = 0.1
+    TELESCOPE_DIAMETER_MAX = 100.0
+    MAX_DISTANCE_FILTER = 50  # parsecs
+
 # Update template directory path
 template_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'templates'))
 static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'static'))
 app = Flask(__name__, 
            template_folder=template_dir,
            static_folder=static_dir)
+app.config.from_object(Config)
 
 # Cache the exoplanet data for 1 hour
 @lru_cache(maxsize=1)
@@ -50,17 +62,38 @@ def home():
             error="Failed to load exoplanet data. Please try again later."
         )
 
+def calculate_stats(data) -> Dict[str, Any]:
+    """Calculate summary statistics for the dataset."""
+    try:
+        return {
+            'total_planets': len(data),
+            'avg_habitability': float(data['habitability_index'].mean()) if len(data) > 0 else 0.0,
+            'num_clusters': int(data['cluster'].nunique()) if 'cluster' in data.columns else 0
+        }
+    except Exception as e:
+        logger.warning(f"Error calculating stats: {e}")
+        return {'total_planets': 0, 'avg_habitability': 0.0, 'num_clusters': 0}
+
+def validate_telescope_diameter(diameter_str: str) -> Tuple[bool, float, str]:
+    """Validate telescope diameter input."""
+    try:
+        diameter = float(diameter_str)
+        if not (Config.TELESCOPE_DIAMETER_MIN <= diameter <= Config.TELESCOPE_DIAMETER_MAX):
+            return False, 0.0, f'Telescope diameter must be between {Config.TELESCOPE_DIAMETER_MIN} and {Config.TELESCOPE_DIAMETER_MAX} meters'
+        return True, diameter, ""
+    except (ValueError, TypeError):
+        return False, 0.0, "Invalid telescope diameter format"
+
 @app.route('/filter')
 def filter_data():
     """Filter and cluster exoplanet data based on telescope diameter."""
     try:
-        diameter = float(request.args.get('telescope_diameter', 2.0))
+        diameter_str = request.args.get('telescope_diameter', '2.0')
         
         # Validate input
-        if not (0.1 <= diameter <= 100):
-            return jsonify({
-                'error': 'Telescope diameter must be between 0.1 and 100 meters'
-            }), 400
+        is_valid, diameter, error_msg = validate_telescope_diameter(diameter_str)
+        if not is_valid:
+            return jsonify({'error': error_msg}), 400
         
         # Get cached data and apply filters
         exoplanet_data = get_cached_exoplanet_data()
@@ -69,22 +102,11 @@ def filter_data():
         # Perform clustering on filtered data
         filtered_data = cluster_exoplanets(filtered_data)
         
-        # Create visualization - parse the HTML to get the JSON data
-        visualization_html = create_3d_visualization(filtered_data)
-        
-        # Extract the JSON data from the Plotly HTML
-        data_match = re.search(r'Plotly\.newPlot\((.*?)\)(?=;|$)', visualization_html)
-        if data_match:
-            plot_data = json.loads(f'[{data_match.group(1)}]')[0]
-        else:
-            plot_data = {}
+        # Create visualization - get JSON data directly
+        plot_data = create_3d_visualization(filtered_data, return_json=True)
         
         # Add summary statistics
-        stats = {
-            'total_planets': len(filtered_data),
-            'avg_habitability': filtered_data['habitability_index'].mean(),
-            'num_clusters': filtered_data['cluster'].nunique()
-        }
+        stats = calculate_stats(filtered_data)
         
         return jsonify({
             'visualization': plot_data,
@@ -106,5 +128,14 @@ def not_found_error(error):
 def internal_error(error):
     return render_template('500.html'), 500
 
+@app.route('/health')
+def health_check():
+    """Health check endpoint."""
+    return jsonify({'status': 'healthy', 'service': 'HWO Exoplanet Visualization'})
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(
+        debug=app.config['DEBUG'],
+        host=app.config['HOST'],
+        port=app.config['PORT']
+    )
