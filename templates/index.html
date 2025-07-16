@@ -6,58 +6,337 @@
     <title>HWO Exoplanet Visualization</title>
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdn.plot.ly/plotly-2.27.1.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <h1>Exoplanets Observable by HWO</h1>
+    <header class="main-header">
+        <nav class="nav-container">
+            <div class="logo">
+                <span class="logo-text">HWO</span>
+                <span class="logo-subtext">Exoplanet Explorer</span>
+            </div>
+            <div class="nav-controls">
+                <button class="nav-button" id="help-button" title="View Help">
+                    <span class="icon">?</span>
+                </button>
+                <button class="nav-button" id="settings-button" title="Settings">
+                    <span class="icon">⚙</span>
+                </button>
+            </div>
+        </nav>
+    </header>
 
-    {% if error %}
-    <div class="error-message">
-        {{ error }}
-    </div>
-    {% endif %}
-
-    <div class="controls">
-        <label for="telescope_diameter">Telescope Diameter (meters):</label>
-        <input type="range" id="telescope_diameter" name="telescope_diameter" 
-               min="1" max="10" step="0.5" value="2">
-        <span id="diameter_value">2</span> m
-    </div>
-
-    <div class="stats" id="stats">
-        <div class="stat-card">
-            <h3>Total Planets</h3>
-            <p id="total_planets">Loading...</p>
+    <main class="main-content">
+        <div class="title-section">
+            <h1>Exoplanets Observable by HWO</h1>
+            <p class="subtitle">Interactive 3D visualization of potential exoplanets within HWO's observation range</p>
         </div>
-        <div class="stat-card">
-            <h3>Average Habitability</h3>
-            <p id="avg_habitability">Loading...</p>
-        </div>
-        <div class="stat-card">
-            <h3>Number of Clusters</h3>
-            <p id="num_clusters">Loading...</p>
-        </div>
-    </div>
 
-    <div id="visualization">
-        {% if visualization %}
-            {{ visualization|safe }}
-        {% else %}
-            <p>Loading visualization...</p>
+        {% if error %}
+        <div class="error-message">
+            {{ error }}
+        </div>
         {% endif %}
+
+        <div class="dashboard">
+            <aside class="control-panel">
+                <div class="control-section">
+                    <h2>Telescope Configuration</h2>
+                    <div class="control-group">
+                        <label for="telescope_diameter">Telescope Diameter</label>
+                        <div class="slider-container">
+                            <input type="range" id="telescope_diameter" name="telescope_diameter" 
+                                   min="1" max="10" step="0.5" value="2">
+                            <div class="slider-value">
+                                <span id="diameter_value">2</span> meters
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <h2>Advanced Filters</h2>
+                    <div class="filter-group">
+                        <div class="filter-item">
+                            <label for="min_radius">Min Radius (Earth radii)</label>
+                            <input type="number" id="min_radius" min="0" step="0.1" value="0">
+                        </div>
+                        <div class="filter-item">
+                            <label for="max_radius">Max Radius (Earth radii)</label>
+                            <input type="number" id="max_radius" min="0" step="0.1" value="10">
+                        </div>
+                        <div class="filter-item">
+                            <label for="min_distance">Min Distance (parsecs)</label>
+                            <input type="number" id="min_distance" min="0" step="1" value="0">
+                        </div>
+                        <div class="filter-item">
+                            <label for="max_distance">Max Distance (parsecs)</label>
+                            <input type="number" id="max_distance" min="0" step="1" value="1000">
+                        </div>
+                        <div class="filter-item">
+                            <label for="min_habitability">Min Habitability Index</label>
+                            <input type="number" id="min_habitability" min="0" max="1" step="0.1" value="0">
+                        </div>
+                        <button id="apply-filters" class="filter-button">Apply Filters</button>
+                    </div>
+                </div>
+
+                <div class="stats" id="stats">
+                    <div class="stat-card">
+                        <h3>Total Planets</h3>
+                        <p id="total_planets">Loading...</p>
+                        <div class="stat-info" title="Total number of observable exoplanets">ℹ</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Average Habitability</h3>
+                        <p id="avg_habitability">Loading...</p>
+                        <div class="stat-info" title="Average habitability index (0-1)">ℹ</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Number of Clusters</h3>
+                        <p id="num_clusters">Loading...</p>
+                        <div class="stat-info" title="Number of identified planet clusters">ℹ</div>
+                    </div>
+                </div>
+            </aside>
+
+            <section class="visualization-container">
+                <div class="top-controls">
+                    <div class="left-controls">
+                        <button class="control-button" id="reset-view" title="Reset View">
+                            <span class="icon">⟲</span>
+                        </button>
+                        <button class="control-button" id="toggle-grid" title="Toggle Grid">
+                            <span class="icon">⊞</span>
+                        </button>
+                        <button class="control-button" id="toggle-rotation" title="Toggle Auto-rotation">
+                            <span class="icon">↻</span>
+                        </button>
+                    </div>
+
+                    <div class="center-controls">
+                        <div class="cluster-controls">
+                            <button class="control-button" id="show-first-cluster">
+                                Show First Cluster
+                            </button>
+                            <div class="cluster-legend">
+                                <div class="cluster-item active" data-cluster="1">
+                                    <span class="cluster-dot"></span>
+                                    <span class="cluster-name">Cluster 1</span>
+                                </div>
+                                <div class="cluster-item" data-cluster="unassigned">
+                                    <span class="cluster-dot"></span>
+                                    <span class="cluster-name">Unassigned</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="right-controls">
+                        <label>Filter by:</label>
+                        <select id="colorBy" class="control-select">
+                            <option value="habitability">Habitability Index</option>
+                            <option value="distance">Distance</option>
+                            <option value="radius">Planet Radius</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="visualization">
+                    {% if visualization %}
+                        {{ visualization|safe }}
+                    {% else %}
+                        <div class="loading-animation">
+                            <div class="loader"></div>
+                            <p>Loading visualization...</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </section>
+
+            <aside class="planet-details-panel" id="planet-details">
+                <div class="panel-header">
+                    <h2>Planet Details</h2>
+                    <button class="close-panel-button" id="close-planet-details">×</button>
+                </div>
+                <div class="planet-info">
+                    <h3 id="planet-name">Select a planet to view details</h3>
+                    <div class="planet-properties">
+                        <div class="property-group">
+                            <label>Distance from Earth:</label>
+                            <span id="planet-distance">-</span>
+                        </div>
+                        <div class="property-group">
+                            <label>Planet Radius:</label>
+                            <span id="planet-radius">-</span>
+                        </div>
+                        <div class="property-group">
+                            <label>Orbital Period:</label>
+                            <span id="planet-period">-</span>
+                        </div>
+                        <div class="property-group">
+                            <label>Habitability Index:</label>
+                            <span id="planet-habitability">-</span>
+                        </div>
+                        <div class="property-group">
+                            <label>Star Type:</label>
+                            <span id="star-type">-</span>
+                        </div>
+                        <div class="property-group">
+                            <label>Discovery Method:</label>
+                            <span id="discovery-method">-</span>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </main>
+
+    <footer class="main-footer">
+        <div class="footer-content">
+            <p>Data sourced from NASA Exoplanet Archive</p>
+            <p>Last updated: <span id="last-update">July 16, 2025</span></p>
+        </div>
+    </footer>
+
+    <div id="help-modal" class="modal">
+        <div class="modal-content">
+            <h2>About This Visualization</h2>
+            <p>This 3D visualization shows exoplanets that could potentially be observed by the Habitable Worlds Observatory (HWO).</p>
+            <p>The visualization plots planets based on:</p>
+            <ul>
+                <li>Distance from Earth (parsecs)</li>
+                <li>Planet Radius (Earth radii)</li>
+                <li>Orbital Period (days)</li>
+            </ul>
+            <p>Color indicates habitability index, with brighter colors showing higher potential for habitability.</p>
+            <button class="close-button">Close</button>
+        </div>
     </div>
 
     <script>
+        let isRotating = false;
+        let rotationInterval;
+        let currentLayout = {};
+        
+        // Initialize visualization controls
         document.getElementById("telescope_diameter").oninput = function() {
             document.getElementById("diameter_value").innerHTML = this.value;
             updateVisualization(this.value);
         };
 
-        function updateVisualization(diameter) {
-            // Show loading state
+        // Reset view button
+        document.getElementById("reset-view").onclick = function() {
+            if (currentLayout) {
+                const defaultCamera = {
+                    eye: {x: 1.5, y: 1.5, z: 1.2},
+                    center: {x: 0, y: 0, z: 0},
+                    up: {x: 0, y: 0, z: 1}
+                };
+                
+                Plotly.relayout('visualization', {
+                    'scene.camera': defaultCamera
+                });
+            }
+        };
+
+        // Toggle grid button
+        document.getElementById("toggle-grid").onclick = function() {
+            const update = {
+                'scene.xaxis.showgrid': !currentLayout['scene.xaxis.showgrid'],
+                'scene.yaxis.showgrid': !currentLayout['scene.yaxis.showgrid'],
+                'scene.zaxis.showgrid': !currentLayout['scene.zaxis.showgrid']
+            };
+            Plotly.relayout('visualization', update);
+            currentLayout = {...currentLayout, ...update};
+            this.classList.toggle('active');
+        };
+
+        // Toggle rotation button
+        document.getElementById("toggle-rotation").onclick = function() {
+            isRotating = !isRotating;
+            this.classList.toggle('active');
+            
+            if (isRotating) {
+                rotationInterval = setInterval(() => {
+                    const currentCamera = currentLayout['scene.camera'] || {
+                        eye: {x: 1.5, y: 1.5, z: 1.2},
+                        center: {x: 0, y: 0, z: 0},
+                        up: {x: 0, y: 0, z: 1}
+                    };
+                    
+                    const angle = 0.01;
+                    const cos = Math.cos(angle);
+                    const sin = Math.sin(angle);
+                    
+                    const newX = currentCamera.eye.x * cos - currentCamera.eye.y * sin;
+                    const newY = currentCamera.eye.x * sin + currentCamera.eye.y * cos;
+                    
+                    Plotly.relayout('visualization', {
+                        'scene.camera': {
+                            ...currentCamera,
+                            eye: {x: newX, y: newY, z: currentCamera.eye.z}
+                        }
+                    });
+                }, 50);
+            } else {
+                clearInterval(rotationInterval);
+            }
+        };
+
+        // Cluster controls
+        document.getElementById("show-first-cluster").onclick = function() {
+            this.classList.toggle('active');
+            const isShowing = this.classList.contains('active');
+            
+            const update = {
+                visible: isShowing ? [true, false] : [true, true]
+            };
+            
+            Plotly.restyle('visualization', update);
+        };
+
+        // Cluster legend items
+        document.querySelectorAll('.cluster-item').forEach(item => {
+            item.onclick = function() {
+                const clusterId = this.dataset.cluster;
+                this.classList.toggle('active');
+                
+                const isVisible = this.classList.contains('active');
+                const traces = document.getElementById('visualization').data;
+                
+                const update = {
+                    visible: traces.map((trace, i) => {
+                        if (clusterId === 'unassigned') {
+                            return i === 1 ? isVisible : trace.visible;
+                        }
+                        return i === 0 ? isVisible : trace.visible;
+                    })
+                };
+                
+                Plotly.restyle('visualization', update);
+            };
+        });
+
+        // Color by selector
+        document.getElementById("colorBy").onchange = function() {
+            updateVisualization(document.getElementById("telescope_diameter").value);
+        };
+
+        // Apply filters button
+        document.getElementById("apply-filters").onclick = function() {
+            const minRadius = document.getElementById("min_radius").value;
+            const maxRadius = document.getElementById("max_radius").value;
+            const minDistance = document.getElementById("min_distance").value;
+            const maxDistance = document.getElementById("max_distance").value;
+            const minHabitability = document.getElementById("min_habitability").value;
+            
             showLoading();
             clearError();
             
-            fetch(`/filter?telescope_diameter=${diameter}`)
+            const colorBy = document.getElementById("colorBy").value;
+            
+            fetch(`/filter?telescope_diameter=${diameter}&color_by=${colorBy}&min_radius=${minRadius}&max_radius=${maxRadius}&min_distance=${minDistance}&max_distance=${maxDistance}&min_habitability=${minHabitability}`)
                 .then(response => {
                     if (!response.ok) {
                         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -69,14 +348,27 @@
                     if (data.error) {
                         showError(data.error);
                     } else {
-                        // Update visualization with the data and layout
                         const plotData = data.visualization.data || [];
                         const layout = data.visualization.layout || {};
                         
-                        // Ensure visualization div exists
                         const vizDiv = document.getElementById('visualization');
                         if (vizDiv) {
-                            Plotly.newPlot('visualization', plotData, layout, {responsive: true});
+                            Plotly.newPlot('visualization', plotData, layout, {
+                                responsive: true,
+                                displayModeBar: true,
+                                displaylogo: false,
+                                modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+                                toImageButtonOptions: {
+                                    format: 'png',
+                                    filename: 'HWO_Exoplanets',
+                                    height: 1080,
+                                    width: 1920,
+                                    scale: 2
+                                }
+                            }).then(() => {
+                                currentLayout = layout;
+                                setupPlotlyEvents();
+                            });
                         }
                         
                         updateStats(data.stats);
@@ -87,6 +379,97 @@
                     showError('Failed to update visualization. Please check your connection and try again.');
                     console.error('Error:', error);
                 });
+        };
+
+        function updateVisualization(diameter) {
+            showLoading();
+            clearError();
+            
+            const colorBy = document.getElementById("colorBy").value;
+            const filters = {
+                min_radius: parseFloat(document.getElementById("min_radius").value),
+                max_radius: parseFloat(document.getElementById("max_radius").value),
+                min_distance: parseFloat(document.getElementById("min_distance").value),
+                max_distance: parseFloat(document.getElementById("max_distance").value),
+                min_habitability: parseFloat(document.getElementById("min_habitability").value)
+            };
+            
+            fetch(`/filter?telescope_diameter=${diameter}&color_by=${colorBy}&` + new URLSearchParams(filters))
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    hideLoading();
+                    if (data.error) {
+                        showError(data.error);
+                    } else {
+                        const plotData = data.visualization.data || [];
+                        const layout = data.visualization.layout || {};
+                        
+                        const vizDiv = document.getElementById('visualization');
+                        if (vizDiv) {
+                            Plotly.newPlot('visualization', plotData, layout, {
+                                responsive: true,
+                                displayModeBar: true,
+                                displaylogo: false,
+                                modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+                                toImageButtonOptions: {
+                                    format: 'png',
+                                    filename: 'HWO_Exoplanets',
+                                    height: 1080,
+                                    width: 1920,
+                                    scale: 2
+                                }
+                            }).then(() => {
+                                currentLayout = layout;
+                                setupPlotlyEvents();
+                            });
+                        }
+                        
+                        updateStats(data.stats);
+                    }
+                })
+                .catch(error => {
+                    hideLoading();
+                    showError('Failed to update visualization. Please check your connection and try again.');
+                    console.error('Error:', error);
+                });
+        }
+
+        function setupPlotlyEvents() {
+            const vizDiv = document.getElementById('visualization');
+            vizDiv.on('plotly_click', function(data) {
+                const point = data.points[0];
+                if (point) {
+                    selectedPlanet = {
+                        name: point.text || 'Unknown',
+                        distance: point.x + ' parsecs',
+                        radius: point.y + ' Earth radii',
+                        period: point.z + ' days',
+                        habitability: point.customdata ? point.customdata[0].toFixed(2) : 'Unknown',
+                        starType: point.customdata ? point.customdata[1] : 'Unknown',
+                        discoveryMethod: point.customdata ? point.customdata[2] : 'Unknown'
+                    };
+                    updatePlanetDetails();
+                }
+            });
+        }
+
+        function updatePlanetDetails() {
+            if (!selectedPlanet) return;
+
+            document.getElementById('planet-name').textContent = selectedPlanet.name;
+            document.getElementById('planet-distance').textContent = selectedPlanet.distance;
+            document.getElementById('planet-radius').textContent = selectedPlanet.radius;
+            document.getElementById('planet-period').textContent = selectedPlanet.period;
+            document.getElementById('planet-habitability').textContent = selectedPlanet.habitability;
+            document.getElementById('star-type').textContent = selectedPlanet.starType;
+            document.getElementById('discovery-method').textContent = selectedPlanet.discoveryMethod;
+
+            document.getElementById('planet-details').classList.add('active');
         }
 
         function updateStats(stats) {
@@ -136,6 +519,51 @@
 
         // Initial load of statistics
         updateVisualization(2);
+
+        // Help button functionality
+        document.getElementById('help-button').onclick = function() {
+            document.getElementById('help-modal').style.display = 'block';
+        };
+
+        // Close button in help modal
+        document.querySelector('.close-button').onclick = function() {
+            document.getElementById('help-modal').style.display = 'none';
+        };
+
+        // Close modal when clicking outside of it
+        window.onclick = function(event) {
+            const modal = document.getElementById('help-modal');
+            if (event.target == modal) {
+                modal.style.display = "none";
+            }
+        };
+
+        // Close planet details panel
+        document.getElementById("close-planet-details").onclick = function() {
+            document.getElementById("planet-details").style.display = "none";
+        };
+
+        // Show planet details on click
+        document.getElementById("visualization").onclick = function(event) {
+            const planetId = event.target.dataset.planetId;
+            if (planetId) {
+                fetch(`/planet_details?id=${planetId}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            document.getElementById("planet-name").textContent = data.planet.name;
+                            document.getElementById("planet-distance").textContent = data.planet.distance;
+                            document.getElementById("planet-radius").textContent = data.planet.radius;
+                            document.getElementById("planet-period").textContent = data.planet.period;
+                            document.getElementById("planet-habitability").textContent = data.planet.habitability;
+                            document.getElementById("star-type").textContent = data.planet.star_type;
+                            document.getElementById("discovery-method").textContent = data.planet.discovery_method;
+                            
+                            document.getElementById("planet-details").style.display = "block";
+                        }
+                    });
+            }
+        };
     </script>
 </body>
 </html>

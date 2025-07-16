@@ -10,13 +10,26 @@ logger = logging.getLogger(__name__)
 
 # Visualization configuration constants
 VIZ_CONFIG = {
-    'max_points': 2000,  # Limit points for performance
-    'min_marker_size': 3,
-    'max_marker_size': 25,
-    'default_opacity': 0.8,
-    'cluster_colors': ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
-                      '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'],
-    'habitability_colorscale': 'Viridis'
+    'max_points': 2000,
+    'min_marker_size': 5,
+    'max_marker_size': 30,
+    'default_opacity': 0.85,
+    'cluster_colors': [
+        'rgb(0, 180, 255)',  # Bright blue
+        'rgb(0, 255, 157)',  # Cyan
+        'rgb(255, 187, 0)',  # Gold
+        'rgb(255, 68, 68)',  # Red
+        'rgb(170, 0, 255)',  # Purple
+        'rgb(255, 170, 0)',  # Orange
+    ],
+    'habitability_colorscale': [
+        [0, "rgb(40, 0, 80)"],
+        [0.2, "rgb(70, 0, 120)"],
+        [0.4, "rgb(90, 30, 150)"],
+        [0.6, "rgb(110, 50, 180)"],
+        [0.8, "rgb(130, 90, 210)"],
+        [1, "rgb(150, 130, 240)"]
+    ]
 }
 
 @lru_cache(maxsize=64)
@@ -176,8 +189,7 @@ def create_clustered_visualization(data: pd.DataFrame) -> list:
                     colorscale=VIZ_CONFIG['habitability_colorscale'],
                     opacity=VIZ_CONFIG['default_opacity'],
                     colorbar=dict(
-                        title="Habitability Index",
-                        titleside="right"
+                        title="Habitability Index"
                     ) if i == 0 else None,  # Only show colorbar for first trace
                     line=dict(width=1, color=cluster_colors[i % len(cluster_colors)]),
                     cmin=0, cmax=1  # Fix colorbar range
@@ -225,7 +237,7 @@ def create_clustered_visualization(data: pd.DataFrame) -> list:
 
 def create_3d_visualization(exoplanet_data: pd.DataFrame, return_json: bool = False) -> Union[str, Dict[str, Any]]:
     """
-    Create an optimized 3D visualization of exoplanet data.
+    Create an optimized 3D visualization of exoplanet data with a space-themed design.
     
     Parameters:
     -----------
@@ -251,55 +263,77 @@ def create_3d_visualization(exoplanet_data: pd.DataFrame, return_json: bool = Fa
         if 'cluster' in viz_data.columns and viz_data['cluster'].nunique() > 1:
             traces = create_clustered_visualization(viz_data)
         else:
-            # Simple single-trace visualization
             traces = [_create_simple_trace(viz_data)]
         
         if not traces:
             return _create_empty_plot(return_json)
         
-        # Enhanced layout
+        # Enhanced layout with space theme
         layout = go.Layout(
             title={
                 'text': f'Exoplanets Observable by HWO ({len(viz_data)} points)',
                 'x': 0.5,
                 'xanchor': 'center',
-                'font': {'size': 16}
+                'font': {'size': 18, 'color': 'white', 'family': 'Segoe UI'}
             },
             scene=dict(
                 xaxis=dict(
-                    title='Distance (parsecs)', 
-                    backgroundcolor="rgb(240, 240, 245)",
-                    gridcolor="white",
-                    showspikes=False
+                    title=dict(
+                        text='Distance (parsecs)',
+                        font=dict(color="#3498db", size=12)
+                    ),
+                    backgroundcolor="rgb(0, 0, 0)",
+                    gridcolor="rgba(52, 152, 219, 0.1)",
+                    showspikes=False,
+                    showgrid=True,
+                    zeroline=False,
+                    showline=True,
+                    linecolor='rgba(52, 152, 219, 0.5)'
                 ),
                 yaxis=dict(
-                    title='Radius (Earth Radii)', 
-                    backgroundcolor="rgb(240, 240, 245)",
-                    gridcolor="white",
-                    showspikes=False
+                    title=dict(
+                        text='Radius (Earth Radii)',
+                        font=dict(color="#3498db", size=12)
+                    ),
+                    backgroundcolor="rgb(0, 0, 0)",
+                    gridcolor="rgba(52, 152, 219, 0.1)",
+                    showspikes=False,
+                    showgrid=True,
+                    zeroline=False,
+                    showline=True,
+                    linecolor='rgba(52, 152, 219, 0.5)'
                 ),
                 zaxis=dict(
-                    title='Orbital Period (days)', 
-                    backgroundcolor="rgb(240, 240, 245)",
-                    gridcolor="white",
-                    showspikes=False
+                    title=dict(
+                        text='Orbital Period (days)',
+                        font=dict(color="#3498db", size=12)
+                    ),
+                    backgroundcolor="rgb(0, 0, 0)",
+                    gridcolor="rgba(52, 152, 219, 0.1)",
+                    showspikes=False,
+                    showgrid=True,
+                    zeroline=False,
+                    showline=True,
+                    linecolor='rgba(52, 152, 219, 0.5)'
                 ),
-                bgcolor="rgb(248, 248, 252)",
+                bgcolor="rgb(0, 0, 0)",
                 camera=dict(
-                    eye=dict(x=1.5, y=1.5, z=1.2)  # Better default viewing angle
+                    eye=dict(x=1.5, y=1.5, z=1.2)
                 )
             ),
             margin=dict(l=0, r=0, b=0, t=50),
-            font=dict(size=12),
+            font=dict(size=12, color="white", family="Segoe UI"),
             legend=dict(
                 x=0.02,
                 y=0.98,
-                bgcolor="rgba(255, 255, 255, 0.8)",
-                bordercolor="rgba(0, 0, 0, 0.2)",
-                borderwidth=1
+                bgcolor="rgba(0, 0, 0, 0.8)",
+                bordercolor="rgba(52, 152, 219, 0.3)",
+                borderwidth=1,
+                font=dict(color="white", size=10)
             ),
-            # Improved performance settings
             hovermode='closest',
+            paper_bgcolor="rgba(0, 0, 0, 0)",
+            plot_bgcolor="rgba(0, 0, 0, 0)",
             updatemenus=[
                 dict(
                     type="buttons",
@@ -357,7 +391,7 @@ def create_3d_visualization(exoplanet_data: pd.DataFrame, return_json: bool = Fa
         return _create_empty_plot(return_json)
 
 def _create_simple_trace(data: pd.DataFrame) -> go.Scatter3d:
-    """Create a simple single-trace visualization."""
+    """Create a simple single-trace visualization with enhanced marker styling."""
     x = data['st_dist'].fillna(0)
     y = data['pl_rade'].fillna(1)
     z = data['pl_orbper'].fillna(365)
@@ -372,14 +406,27 @@ def _create_simple_trace(data: pd.DataFrame) -> go.Scatter3d:
         marker=dict(
             size=sizes,
             color=colors,
-            colorscale=VIZ_CONFIG['habitability_colorscale'],
-            opacity=VIZ_CONFIG['default_opacity'],
+            colorscale=[
+                [0, "rgb(40, 0, 80)"],
+                [0.2, "rgb(70, 0, 120)"],
+                [0.4, "rgb(90, 30, 150)"],
+                [0.6, "rgb(110, 50, 180)"],
+                [0.8, "rgb(130, 90, 210)"],
+                [1, "rgb(150, 130, 240)"]
+            ],
+            opacity=0.8,
             colorbar=dict(
-                title="Habitability Index",
-                titleside="right"
+                title=dict(
+                    text="Habitability Index",
+                    font=dict(color="white", size=12)
+                ),
+                tickfont=dict(color="white"),
+                bgcolor="rgba(0,0,0,0)",
+                bordercolor="rgba(52, 152, 219, 0.3)"
             ),
-            line=dict(width=0.5, color='DarkSlateGrey'),
-            cmin=0, cmax=1
+            line=dict(width=1, color='rgba(52, 152, 219, 0.5)'),
+            cmin=0, 
+            cmax=1
         ),
         text=hover_text,
         hovertemplate='%{text}<extra></extra>',

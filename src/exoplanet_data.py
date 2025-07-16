@@ -16,7 +16,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Updated NASA Exoplanet Archive API
-NASA_EXOPLANET_API = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync"
+NASA_EXOPLANET_API = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query=select+*+from+ps+where+disc_facility+=+'Transiting Exoplanet Survey Satellite (TESS)'"
+NASA_EXOPLANET_API += "&format=json"
 
 CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cache")
 CACHE_FILE = os.path.join(CACHE_DIR, "exoplanet_cache.pkl.gz")
