@@ -97,14 +97,12 @@ class TestValidation:
 class TestFilterEndpoint:
     """Test the filter endpoint."""
     
-    @patch('app.get_cached_exoplanet_data')
-    @patch('app.cluster_exoplanets')
+    @patch('app.get_cached_processed_data')
     @patch('app.create_3d_visualization')
-    def test_filter_endpoint_success(self, mock_viz, mock_cluster, mock_data, client, sample_data):
+    def test_filter_endpoint_success(self, mock_viz, mock_data, client, sample_data):
         """Test successful filter request."""
         # Setup mocks
-        mock_data.return_value = sample_data
-        mock_cluster.return_value = sample_data
+        mock_data.return_value = (sample_data, {'total_planets': 3, 'avg_habitability': 0.6, 'num_clusters': 2})
         mock_viz.return_value = {'data': [], 'layout': {}}
         
         response = client.get('/filter?telescope_diameter=2.0')

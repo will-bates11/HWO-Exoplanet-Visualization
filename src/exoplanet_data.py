@@ -16,13 +16,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Updated NASA Exoplanet Archive API
-NASA_EXOPLANET_API = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query=select+*+from+ps+where+disc_facility+=+'Transiting Exoplanet Survey Satellite (TESS)'"
+NASA_EXOPLANET_API = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query=select+*+from+ps"
 NASA_EXOPLANET_API += "&format=json"
 
 CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cache")
 CACHE_FILE = os.path.join(CACHE_DIR, "exoplanet_cache.pkl.gz")
 METADATA_FILE = os.path.join(CACHE_DIR, "cache_metadata.json")
-CACHE_DURATION = timedelta(hours=6)  # Reduced cache duration for fresher data
+CACHE_DURATION = timedelta(days=int(os.environ.get('CACHE_DURATION_DAYS', 1)))  # Configurable cache duration from environment
 
 # Pre-computed data indices for faster filtering
 DISTANCE_INDEX_FILE = os.path.join(CACHE_DIR, "distance_index.pkl")
@@ -39,7 +39,7 @@ class DataCache:
         """Generate cache key from query parameters."""
         return f"query_{hash(str(sorted(query_params.items())))}"
     
-    def load_main_cache(self) -> Optional[pd.DataFrame]:
+    def load_main_cache(self, allow_expired: bool = False) -> Optional[pd.DataFrame]:
         """Load main cached exoplanet data with compression."""
         if not os.path.exists(CACHE_FILE) or not os.path.exists(METADATA_FILE):
             return None
@@ -50,7 +50,7 @@ class DataCache:
                 metadata = json.load(f)
             
             cache_time = datetime.fromisoformat(metadata['timestamp'])
-            if datetime.now() - cache_time > CACHE_DURATION:
+            if not allow_expired and datetime.now() - cache_time > CACHE_DURATION:
                 logger.info("Cache expired, will fetch fresh data")
                 return None
             
@@ -268,7 +268,7 @@ def fetch_exoplanet_data() -> pd.DataFrame:
     except requests.exceptions.RequestException as e:
         logger.error(f"Error fetching data from NASA API: {e}")
         # If we have cached data, use it as fallback even if expired
-        cached_data = cache_manager.load_main_cache()
+        cached_data = cache_manager.load_main_cache(allow_expired=True)
         if cached_data is not None:
             logger.warning("Using expired cache as fallback")
             return cached_data
