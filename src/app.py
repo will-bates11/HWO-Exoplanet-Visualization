@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, g
+from flask import Flask, render_template, request, jsonify, g, Response, make_response
 from exoplanet_data import fetch_exoplanet_data, get_filtered_data, fetch_exoplanet_data_cached
 from visualization import create_3d_visualization
 from clustering import cluster_exoplanets_fast, get_cluster_summary
@@ -10,8 +10,28 @@ import json
 import re
 import time
 import gzip
+import io
+import csv
+import pandas as pd
 from typing import Dict, Any, Tuple, Optional
 from threading import Lock
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Security imports
+try:
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+    from flask_talisman import Talisman
+    SECURITY_ENABLED = True
+except ImportError:
+    logger.warning("Security libraries not available. Running without rate limiting and security headers.")
+    SECURITY_ENABLED = False
 
 # Set up logging
 logging.basicConfig(
@@ -40,9 +60,99 @@ app = Flask(__name__,
            static_folder=static_dir)
 app.config.from_object(Config)
 
+# Security enhancements
+if SECURITY_ENABLED:
+    # Content Security Policy and security headers
+    Talisman(app, content_security_policy={
+        'default-src': "'self'",
+        'script-src': "'self' 'unsafe-inline'",
+        'style-src': "'self' 'unsafe-inline'",
+        'img-src': "'self' data:",
+    })
+    
+    # Rate limiting
+    limiter = Limiter(
+        app=app,
+        key_func=get_remote_address,
+        default_limits=["200 per day", "50 per hour"]
+    )
+else:
+    # Dummy limiter for when security libraries aren't available
+    class DummyLimiter:
+        def limit(self, *args, **kwargs):
+            def decorator(f):
+                return f
+            return decorator
+    limiter = DummyLimiter()
+
 # Thread-safe cache for filtered data
 _filtered_cache = {}
 _cache_lock = Lock()
+
+# Input validation functions
+def validate_numeric_param(param_name, value, min_val=None, max_val=None, default=None):
+    """Validate numeric parameters with optional min/max bounds."""
+    try:
+        num = float(value)
+        if min_val is not None and num < min_val:
+            raise ValueError(f"{param_name} must be >= {min_val}")
+        if max_val is not None and num > max_val:
+            raise ValueError(f"{param_name} must be <= {max_val}")
+        return num
+    except (ValueError, TypeError):
+        if default is not None:
+            return default
+        raise ValueError(f"Invalid {param_name}: must be a number")
+
+def validate_string_param(param_name, value, max_length=100, allowed_chars=None):
+    """Validate string parameters with length and character restrictions."""
+    if not isinstance(value, str):
+        raise ValueError(f"Invalid {param_name}: must be a string")
+    if len(value) > max_length:
+        raise ValueError(f"{param_name} too long (max {max_length} characters)")
+    if allowed_chars and not all(c in allowed_chars for c in value):
+        raise ValueError(f"{param_name} contains invalid characters")
+    return value
+
+def sanitize_filters():
+    """Extract and validate filter parameters from request."""
+    try:
+        telescope_diameter = validate_numeric_param(
+            'telescope_diameter', 
+            request.args.get('telescope_diameter', 6.5), 
+            min_val=0.1, max_val=50, default=6.5
+        )
+        max_distance = validate_numeric_param(
+            'max_distance', 
+            request.args.get('max_distance', 100), 
+            min_val=1, max_val=1000, default=100
+        )
+        min_habitability = validate_numeric_param(
+            'min_habitability', 
+            request.args.get('min_habitability', 0.1), 
+            min_val=0, max_val=1, default=0.1
+        )
+        color_by = validate_string_param(
+            'color_by', 
+            request.args.get('color_by', 'habitability'), 
+            max_length=20, 
+            allowed_chars='abcdefghijklmnopqrstuvwxyz_'
+        )
+        
+        # Validate color_by options
+        valid_color_options = ['habitability', 'distance', 'radius', 'temperature', 'cluster']
+        if color_by not in valid_color_options:
+            color_by = 'habitability'
+            
+        return {
+            'telescope_diameter': telescope_diameter,
+            'max_distance': max_distance,
+            'min_habitability': min_habitability,
+            'color_by': color_by
+        }
+    except ValueError as e:
+        logger.warning(f"Invalid filter parameters: {e}")
+        raise
 
 def compress_response(f):
     """Decorator to compress JSON responses for better performance."""
@@ -126,6 +236,7 @@ def after_request(response):
     return response
 
 @app.route('/')
+@limiter.limit("30 per minute")
 @timing_decorator
 def home():
     """Render the home page with initial visualization."""
@@ -207,6 +318,7 @@ def validate_telescope_diameter(diameter_str: str) -> Tuple[bool, float, str]:
         return False, 0.0, "Invalid telescope diameter format. Please enter a valid number."
 
 @app.route('/filter')
+@limiter.limit("10 per minute")
 @timing_decorator
 @compress_response
 def filter_data():
@@ -214,6 +326,11 @@ def filter_data():
     try:
         diameter_str = request.args.get('telescope_diameter', '2.0')
         use_fast_clustering = request.args.get('fast', 'true').lower() == 'true'
+        
+        # Pagination parameters
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 100))
+        per_page = min(per_page, 1000)  # Max 1000 items per page
         
         # Validate input
         is_valid, diameter, error_msg = validate_telescope_diameter(diameter_str)
@@ -255,6 +372,78 @@ def filter_data():
         return jsonify({'error': 'Invalid input parameters'}), 400
     except Exception as e:
         logger.error(f"Error in filter route: {traceback.format_exc()}")
+        return jsonify({'error': 'Internal server error. Please try again.'}), 500
+
+@app.route('/api/planets')
+@limiter.limit("10 per minute")
+@timing_decorator
+@compress_response
+def get_planets():
+    """Get paginated planet data for the current filters."""
+    try:
+        # Get filter parameters
+        diameter_str = request.args.get('telescope_diameter', '2.0')
+        max_distance = float(request.args.get('max_distance', '100'))
+        min_habitability = float(request.args.get('min_habitability', '0'))
+        
+        # Pagination parameters
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 50))
+        per_page = min(max(per_page, 10), 200)  # Between 10 and 200 items per page
+        
+        # Validate input
+        is_valid, diameter, error_msg = validate_telescope_diameter(diameter_str)
+        if not is_valid:
+            return jsonify({'error': error_msg}), 400
+        
+        # Get filtered data
+        filtered_data = get_filtered_data(max_distance)
+        if filtered_data is None:
+            return jsonify({'error': 'No data available'}), 404
+        
+        # Apply habitability filter
+        if min_habitability > 0:
+            filtered_data = filtered_data[filtered_data['habitability_index'] >= min_habitability]
+        
+        # Convert to list of dicts for JSON serialization
+        total_count = len(filtered_data)
+        
+        # Calculate pagination
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        
+        if start_idx >= total_count:
+            paginated_data = []
+        else:
+            paginated_data = filtered_data.iloc[start_idx:end_idx].to_dict('records')
+        
+        # Calculate pagination metadata
+        total_pages = (total_count + per_page - 1) // per_page  # Ceiling division
+        
+        response_data = {
+            'planets': paginated_data,
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total_count': total_count,
+                'total_pages': total_pages,
+                'has_next': page < total_pages,
+                'has_prev': page > 1
+            },
+            'filters': {
+                'telescope_diameter': diameter,
+                'max_distance': max_distance,
+                'min_habitability': min_habitability
+            }
+        }
+        
+        return jsonify(response_data)
+        
+    except ValueError as ve:
+        logger.warning(f"Invalid input: {str(ve)}")
+        return jsonify({'error': 'Invalid input parameters'}), 400
+    except Exception as e:
+        logger.error(f"Error in planets route: {traceback.format_exc()}")
         return jsonify({'error': 'Internal server error. Please try again.'}), 500
 
 @app.route('/api/stats')
@@ -304,6 +493,7 @@ def internal_error(error):
     return render_template('500.html'), 500
 
 @app.route('/health')
+@limiter.limit("60 per minute")
 def health_check():
     """Enhanced health check endpoint with system status."""
     try:
@@ -342,6 +532,172 @@ def clear_cache():
         
     except Exception as e:
         return jsonify({'error': f'Failed to clear caches: {e}'}), 500
+
+@app.route('/api/export/csv')
+@limiter.limit("5 per minute")
+@timing_decorator
+def export_csv():
+    """Export filtered exoplanet data as CSV."""
+    try:
+        # Get filter parameters
+        diameter_str = request.args.get('telescope_diameter', '2.0')
+        max_distance = float(request.args.get('max_distance', '100'))
+        min_habitability = float(request.args.get('min_habitability', '0'))
+        limit = int(request.args.get('limit', 10000))  # Default 10k rows max for exports
+        limit = min(limit, 50000)  # Hard limit of 50k rows
+        
+        # Validate input
+        is_valid, diameter, error_msg = validate_telescope_diameter(diameter_str)
+        if not is_valid:
+            return jsonify({'error': error_msg}), 400
+        
+        # Get filtered data
+        filtered_data = get_filtered_data(max_distance)
+        if filtered_data is None or len(filtered_data) == 0:
+            return jsonify({'error': 'No data available for the specified parameters'}), 404
+        
+        # Apply additional filters
+        if min_habitability > 0:
+            filtered_data = filtered_data[filtered_data['habitability_index'] >= min_habitability]
+        
+        # Apply limit for performance
+        if len(filtered_data) > limit:
+            filtered_data = filtered_data.head(limit)
+        
+        # Select columns for export (exclude internal fields)
+        export_columns = [
+            'pl_name', 'st_dist', 'pl_rade', 'st_teff', 'pl_orbper', 
+            'habitability_index', 'pl_bmassj', 'st_mass', 'pl_eqt', 
+            'pl_insol', 'pl_orbeccen', 'st_age'
+        ]
+        available_columns = [col for col in export_columns if col in filtered_data.columns]
+        export_data = filtered_data[available_columns].copy()
+        
+        # Create CSV response
+        output = io.StringIO()
+        export_data.to_csv(output, index=False)
+        output.seek(0)
+        
+        response = make_response(output.getvalue())
+        response.headers['Content-Type'] = 'text/csv'
+        response.headers['Content-Disposition'] = f'attachment; filename=exoplanets_d{diameter}_dist{max_distance}.csv'
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error exporting CSV: {e}")
+        return jsonify({'error': 'Failed to export data'}), 500
+
+@app.route('/api/export/json')
+@limiter.limit("5 per minute")
+@timing_decorator
+def export_json():
+    """Export filtered exoplanet data as JSON."""
+    try:
+        # Get filter parameters
+        diameter_str = request.args.get('telescope_diameter', '2.0')
+        max_distance = float(request.args.get('max_distance', '100'))
+        min_habitability = float(request.args.get('min_habitability', '0'))
+        limit = int(request.args.get('limit', 10000))  # Default 10k rows max for exports
+        limit = min(limit, 50000)  # Hard limit of 50k rows
+        
+        # Validate input
+        is_valid, diameter, error_msg = validate_telescope_diameter(diameter_str)
+        if not is_valid:
+            return jsonify({'error': error_msg}), 400
+        
+        # Get filtered data
+        filtered_data = get_filtered_data(max_distance)
+        if filtered_data is None or len(filtered_data) == 0:
+            return jsonify({'error': 'No data available for the specified parameters'}), 404
+        
+        # Apply additional filters
+        if min_habitability > 0:
+            filtered_data = filtered_data[filtered_data['habitability_index'] >= min_habitability]
+        
+        # Apply limit for performance
+        if len(filtered_data) > limit:
+            filtered_data = filtered_data.head(limit)
+        
+        # Select columns for export
+        export_columns = [
+            'pl_name', 'st_dist', 'pl_rade', 'st_teff', 'pl_orbper', 
+            'habitability_index', 'pl_bmassj', 'st_mass', 'pl_eqt', 
+            'pl_insol', 'pl_orbeccen', 'st_age'
+        ]
+        available_columns = [col for col in export_columns if col in filtered_data.columns]
+        export_data = filtered_data[available_columns].copy()
+        
+        # Convert to JSON-serializable format
+        json_data = {
+            'metadata': {
+                'telescope_diameter': diameter,
+                'max_distance': max_distance,
+                'min_habitability': min_habitability,
+                'total_planets': len(export_data),
+                'export_timestamp': time.time()
+            },
+            'data': export_data.to_dict('records')
+        }
+        
+        response = make_response(json.dumps(json_data, indent=2))
+        response.headers['Content-Type'] = 'application/json'
+        response.headers['Content-Disposition'] = f'attachment; filename=exoplanets_d{diameter}_dist{max_distance}.json'
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error exporting JSON: {e}")
+        return jsonify({'error': 'Failed to export data'}), 500
+
+@app.route('/api/search')
+@limiter.limit("20 per minute")
+@timing_decorator
+def search_planets():
+    """Search for planets by name with autocomplete."""
+    try:
+        query = request.args.get('q', '').strip().lower()
+        limit = int(request.args.get('limit', 10))
+        
+        if len(query) < 2:
+            return jsonify({'results': []})
+        
+        # Get base data
+        data = fetch_exoplanet_data_cached()
+        if data is None:
+            return jsonify({'results': []})
+        
+        # Filter by name (case-insensitive partial match)
+        matches = data[data['pl_name'].str.lower().str.contains(query, na=False)]
+        
+        # Sort by relevance (exact matches first, then starts with, then contains)
+        def relevance_score(name):
+            name_lower = name.lower()
+            if name_lower == query:
+                return 0
+            elif name_lower.startswith(query):
+                return 1
+            else:
+                return 2
+        
+        matches['relevance'] = matches['pl_name'].apply(relevance_score)
+        matches = matches.sort_values(['relevance', 'pl_name']).head(limit)
+        
+        # Format results
+        results = []
+        for _, planet in matches.iterrows():
+            results.append({
+                'name': planet['pl_name'],
+                'distance': float(planet['st_dist']) if pd.notna(planet['st_dist']) else None,
+                'radius': float(planet['pl_rade']) if pd.notna(planet['pl_rade']) else None,
+                'habitability': float(planet['habitability_index']) if pd.notna(planet['habitability_index']) else 0.0
+            })
+        
+        return jsonify({'results': results})
+        
+    except Exception as e:
+        logger.error(f"Error searching planets: {e}")
+        return jsonify({'error': 'Search failed'}), 500
 
 if __name__ == '__main__':
     logger.info("Starting HWO Exoplanet Visualization (Optimized)")

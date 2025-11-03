@@ -55,6 +55,15 @@
                 </div>
 
                 <div class="control-section">
+                    <h2>Planet Search</h2>
+                    <div class="control-group">
+                        <label for="planet-search">Search Planets</label>
+                        <input type="text" id="planet-search" placeholder="Type planet name..." autocomplete="off">
+                        <div id="search-results" class="search-results"></div>
+                    </div>
+                </div>
+
+                <div class="control-section">
                     <h2>Advanced Filters</h2>
                     <div class="filter-group">
                         <div class="filter-item">
@@ -78,6 +87,10 @@
                             <input type="number" id="min_habitability" min="0" max="1" step="0.1" value="0">
                         </div>
                         <button id="apply-filters" class="filter-button">Apply Filters</button>
+                        <div class="export-buttons">
+                            <button id="export-csv" class="export-button">Export CSV</button>
+                            <button id="export-json" class="export-button">Export JSON</button>
+                        </div>
                     </div>
                 </div>
 
@@ -316,9 +329,210 @@
                 
                 Plotly.restyle('visualization', update);
             };
-        });
+        };
 
-        // Color by selector
+        // Export CSV button
+        document.getElementById("export-csv").onclick = function() {
+            const diameter = document.getElementById("telescope_diameter").value;
+            const maxDistance = document.getElementById("max_distance").value;
+            const minHabitability = document.getElementById("min_habitability").value;
+            
+            const exportUrl = `/api/export/csv?telescope_diameter=${diameter}&max_distance=${maxDistance}&min_habitability=${minHabitability}`;
+            window.open(exportUrl, '_blank');
+        };
+
+        // Export JSON button with loading state
+        document.getElementById("export-json").onclick = function() {
+            const button = this;
+            const originalText = button.textContent;
+            
+            button.classList.add('loading');
+            button.textContent = 'Exporting...';
+            
+            const diameter = document.getElementById("telescope_diameter").value;
+            const maxDistance = document.getElementById("max_distance").value;
+            const minHabitability = document.getElementById("min_habitability").value;
+            
+            const exportUrl = `/api/export/json?telescope_diameter=${diameter}&max_distance=${maxDistance}&min_habitability=${minHabitability}`;
+            
+            // Create a temporary link to trigger download
+            const link = document.createElement('a');
+            link.href = exportUrl;
+            link.download = `exoplanets_${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Reset button after a short delay
+            setTimeout(() => {
+                button.classList.remove('loading');
+                button.textContent = originalText;
+            }, 1000);
+        };
+
+        // Planet search functionality
+        const searchInput = document.getElementById("planet-search");
+        const searchResults = document.getElementById("search-results");
+        let searchTimeout;
+
+        searchInput.oninput = function() {
+            clearTimeout(searchTimeout);
+            const query = this.value.trim();
+            
+            if (query.length < 2) {
+                searchResults.style.display = 'none';
+                return;
+            }
+            
+            // Show loading state
+            searchResults.innerHTML = '<div class="search-result-item"><em>Searching...</em></div>';
+            searchResults.style.display = 'block';
+            
+            searchTimeout = setTimeout(() => {
+                fetch(`/api/search?q=${encodeURIComponent(query)}&limit=10`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.results && data.results.length > 0) {
+                            searchResults.innerHTML = data.results.map(planet => 
+                                `<div class="search-result-item" data-name="${planet.name}">
+                                    <strong>${planet.name}</strong><br>
+                                    <small>Distance: ${planet.distance ? planet.distance + ' pc' : 'Unknown'} | 
+                                           Radius: ${planet.radius ? planet.radius + ' R⊕' : 'Unknown'} | 
+                                           Habitability: ${planet.habitability.toFixed(2)}</small>
+                                </div>`
+                            ).join('');
+                            searchResults.style.display = 'block';
+                        } else {
+                            searchResults.innerHTML = '<div class="search-result-item">No planets found</div>';
+                            searchResults.style.display = 'block';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Search error:', error);
+                        searchResults.innerHTML = '<div class="search-result-item">Search error</div>';
+                        searchResults.style.display = 'block';
+                    });
+            }, 300);
+        };
+
+        // Handle search result clicks
+        searchResults.onclick = function(e) {
+            const item = e.target.closest('.search-result-item');
+            if (item && item.dataset.name) {
+                searchInput.value = item.dataset.name;
+                searchResults.style.display = 'none';
+                // Could add logic to focus/zoom on the selected planet
+            }
+        };
+
+        // Hide search results when clicking elsewhere
+        document.onclick = function(e) {
+            if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+                searchResults.style.display = 'none';
+            }
+        };
+
+        // Load initial values from URL parameters
+        function loadFromURL() {
+            const urlParams = new URLSearchParams(window.location.search);
+            
+            const telescopeDiameter = urlParams.get('telescope_diameter');
+            const maxDistance = urlParams.get('max_distance');
+            const minHabitability = urlParams.get('min_habitability');
+            const colorBy = urlParams.get('color_by');
+            
+            if (telescopeDiameter) document.getElementById('telescope_diameter').value = telescopeDiameter;
+            if (maxDistance) document.getElementById('max_distance').value = maxDistance;
+            if (minHabitability) document.getElementById('min_habitability').value = minHabitability;
+            if (colorBy) document.getElementById('color_by').value = colorBy;
+        }
+
+        // Update URL with current filter values
+        function updateURL() {
+            const telescopeDiameter = document.getElementById('telescope_diameter').value;
+            const maxDistance = document.getElementById('max_distance').value;
+            const minHabitability = document.getElementById('min_habitability').value;
+            const colorBy = document.getElementById('color_by').value;
+            
+            const params = new URLSearchParams();
+            if (telescopeDiameter !== '6.5') params.set('telescope_diameter', telescopeDiameter);
+            if (maxDistance !== '100') params.set('max_distance', maxDistance);
+            if (minHabitability !== '0.1') params.set('min_habitability', minHabitability);
+            if (colorBy !== 'habitability') params.set('color_by', colorBy);
+            
+            const newURL = params.toString() ? `${window.location.pathname}?${params.toString()}` : window.location.pathname;
+            window.history.replaceState({}, '', newURL);
+        }
+
+        // Load from URL on page load
+        loadFromURL();
+
+        // Update URL when filters change
+        function updateFilters() {
+            updateURL();
+            // Show loading state during filter updates
+            showLoading();
+            // The loading will be hidden when the new visualization loads
+            setTimeout(() => hideLoading(), 2000); // Fallback timeout
+        }
+
+        document.getElementById('telescope_diameter').onchange = updateFilters;
+        document.getElementById('max_distance').onchange = updateFilters;
+        document.getElementById('min_habitability').onchange = updateFilters;
+        document.getElementById('color_by').onchange = updateFilters;
+
+        // Loading state management
+        function showLoading() {
+            document.getElementById('loading-overlay').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loading-overlay').classList.add('hidden');
+        }
+
+        // Show loading on page load
+        showLoading();
+
+        // Hide loading when Plotly chart is ready
+        if (window.Plotly) {
+            // Check if chart exists and hide loading
+            setTimeout(() => {
+                if (document.getElementById('visualization').data) {
+                    hideLoading();
+                }
+            }, 1000);
+        }
+
+        // Export CSV button with loading state
+        document.getElementById("export-csv").onclick = function() {
+            const button = this;
+            const originalText = button.textContent;
+            
+            button.classList.add('loading');
+            button.textContent = 'Exporting...';
+            
+            const diameter = document.getElementById("telescope_diameter").value;
+            const maxDistance = document.getElementById("max_distance").value;
+            const minHabitability = document.getElementById("min_habitability").value;
+            
+            const exportUrl = `/api/export/csv?telescope_diameter=${diameter}&max_distance=${maxDistance}&min_habitability=${minHabitability}`;
+            
+            // Create a temporary link to trigger download
+            const link = document.createElement('a');
+            link.href = exportUrl;
+            link.download = `exoplanets_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Reset button after a short delay
+            setTimeout(() => {
+                button.classList.remove('loading');
+                button.textContent = originalText;
+            }, 1000);
+        };
+
+        // Export JSON button with loading state
         document.getElementById("colorBy").onchange = function() {
             updateVisualization(document.getElementById("telescope_diameter").value);
         };
@@ -566,5 +780,14 @@
             }
         };
     </script>
+
+    <!-- Loading overlay -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>Loading exoplanet data...</p>
+        </div>
+    </div>
+
 </body>
 </html>

@@ -19,10 +19,26 @@ A web application for visualizing exoplanets observable by the Habitable Worlds 
 
 ### Prerequisites
 
-- Python 3.8 or higher
-- pip package manager
+- Docker and Docker Compose (recommended)
+- Python 3.8 or higher (alternative manual setup)
+- pip package manager (alternative manual setup)
 
-### Setup
+### Quick Start with Docker (Recommended)
+
+1. Clone the repository:
+```bash
+git clone https://github.com/will-bates11/HWO-Exoplanet-Visualization.git
+cd HWO-Exoplanet-Visualization
+```
+
+2. Start the application:
+```bash
+docker-compose up --build
+```
+
+3. Open your browser and navigate to `http://localhost:12000`
+
+### Manual Setup (Alternative)
 
 1. Clone the repository:
 ```bash
@@ -54,6 +70,18 @@ python app.py
 ```
 
 6. Open your browser and navigate to `http://localhost:12000`
+
+### Production Deployment
+
+For production deployment, use the provided Dockerfile:
+
+```bash
+# Build the image
+docker build -t hwo-exoplanet-viz .
+
+# Run the container
+docker run -p 12000:12000 -e FLASK_ENV=production hwo-exoplanet-viz
+```
 
 ## Usage
 
